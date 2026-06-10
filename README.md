@@ -1,5 +1,7 @@
 # nowplaying
 
+![Preview](screenshot.png)
+
 Fullscreen Now Playing page for MPD. Shows the current track with a dynamic background gradient pulled from the album art, audio quality badges, and Hi-Res detection.
 
 No nginx required - the bridge serves everything on port 8766.
