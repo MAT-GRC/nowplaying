@@ -3,7 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="google" content="notranslate">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Now Playing">
+  <meta name="theme-color" content="#0a0a0a">
   <title>Now Playing</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -187,7 +192,7 @@
 
     #progress-fill {
       height: 100%; border-radius: 3px; background: white;
-      transition: width 1s linear;
+      transition: width 250ms linear;
       will-change: width;
     }
 
@@ -210,6 +215,54 @@
     }
 
     .dot.paused { background: rgba(255,255,255,0.4); animation: none; }
+    .dot.offline { background: #f87171; animation: none; }
+
+    #offline-badge {
+      position: fixed;
+      top: 32px;
+      left: 40px;
+      z-index: 3;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      background: rgba(248,113,113,0.12);
+      border: 1px solid rgba(248,113,113,0.35);
+      color: #fca5a5;
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+    }
+
+    #offline-badge.visible { display: flex; }
+
+    #offline-badge .offline-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #f87171;
+      animation: pulse 2s infinite;
+    }
+
+    #next-track {
+      display: none;
+      margin-top: 14px;
+      font-size: 16px;
+      color: rgba(255,255,255,0.45);
+      text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #next-track .next-label {
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 1.5px;
+      opacity: 0.7;
+      margin-right: 8px;
+    }
 
     @keyframes pulse {
       0%, 100% { opacity: 1; transform: scale(1); }
@@ -260,6 +313,7 @@
 <div id="vignette"></div>
 <div id="text-overlay"></div>
 <div id="clock"></div>
+<div id="offline-badge"><span class="offline-dot"></span>Offline</div>
 
 <div id="content" style="display:none">
   <div id="artwork-container">
@@ -297,6 +351,7 @@
       <div class="dot" id="dot"></div>
       <span id="status-text">Waiting</span>
     </div>
+    <div id="next-track"><span class="next-label">Up next</span><span id="next-track-text"></span></div>
   </div>
 </div>
 
@@ -308,6 +363,9 @@
 <script>
   let currentTrackId = null;
   let bgActive = 'a';
+  let playback = null;   // {elapsed, duration, playing, at}: state from the last poll
+  let failCount = 0;
+  let offline = false;
 
   const FALLBACK_GRADIENTS = [
     'radial-gradient(ellipse at 25% 60%, #1a1a2e 0%, transparent 55%), radial-gradient(ellipse at 75% 35%, #16213e 0%, transparent 55%), #0a0a0a',
@@ -455,7 +513,11 @@
   async function poll() {
     try {
       const MPD_ENDPOINT = window.MPD_ENDPOINT || "/now";
-      const res = await fetch(MPD_ENDPOINT);
+      // Timeout shorter than the 2s poll interval: requests can never pile up
+      const res = await fetch(MPD_ENDPOINT, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout ? AbortSignal.timeout(1500) : undefined
+      });
       if (!res.ok) throw new Error('fetch failed');
       const d = await res.json();
 
@@ -475,10 +537,20 @@
       document.getElementById('content').className       = isPaused ? 'paused' : '';
       document.getElementById('vignette').className      = isPaused ? 'paused' : '';
       document.getElementById('status-text').textContent = isPlaying ? 'Playing' : 'Paused';
-      document.getElementById('current-time').textContent = formatTime(d.elapsed);
       document.getElementById('total-time').textContent   = formatTime(d.duration);
-      document.getElementById('progress-fill').style.width =
-        d.duration > 0 ? (d.elapsed / d.duration * 100).toFixed(1) + '%' : '0%';
+
+      // The ticker (tick) interpolates elapsed between polls for smooth progress
+      playback = { elapsed: d.elapsed, duration: d.duration, playing: isPlaying, at: performance.now() };
+      tick();
+
+      const nextEl = document.getElementById('next-track');
+      if (d.next_title) {
+        document.getElementById('next-track-text').textContent =
+          d.next_title + (d.next_artist ? ' — ' + d.next_artist : '');
+        nextEl.style.display = 'block';
+      } else {
+        nextEl.style.display = 'none';
+      }
 
       const trackKey = `${d.title}|${d.artist}|${d.album}`;
       if (trackKey !== currentTrackId) {
@@ -496,10 +568,48 @@
           loadArtwork(d.art_url || '', d.artist);
         }, 300);
       }
+      failCount = 0;
+      if (offline) setOffline(false);
     } catch(e) {
       console.error('MPD poll error:', e);
+      failCount++;
+      if (failCount >= 3 && !offline) setOffline(true);
     }
   }
+
+  function setOffline(v) {
+    offline = v;
+    document.getElementById('offline-badge').classList.toggle('visible', v);
+    if (v) {
+      document.getElementById('dot').className = 'dot offline';
+      document.getElementById('status-text').textContent = 'Offline';
+      if (playback) playback.playing = false; // freeze interpolated progress
+    }
+  }
+
+  // Smooth progress: interpolate elapsed time between polls (every 250 ms)
+  function tick() {
+    if (!playback) return;
+    let e = playback.elapsed;
+    if (playback.playing) e += (performance.now() - playback.at) / 1000;
+    if (playback.duration > 0) e = Math.min(e, playback.duration);
+    document.getElementById('current-time').textContent = formatTime(e);
+    document.getElementById('progress-fill').style.width =
+      playback.duration > 0 ? (e / playback.duration * 100).toFixed(2) + '%' : '0%';
+  }
+  setInterval(tick, 250);
+
+  // Wake Lock: keeps the screen awake (requires a secure context; harmless
+  // no-op on unsupported browsers)
+  let wakeLock = null;
+  async function requestWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+  }
+  requestWakeLock();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') requestWakeLock();
+  });
 
   // Lang redirect
   const params = new URLSearchParams(window.location.search);

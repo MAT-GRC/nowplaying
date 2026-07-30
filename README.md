@@ -16,6 +16,10 @@ No nginx required - the bridge serves everything on port 8766.
 - Scrolling marquee for long titles
 - Dimmed overlay when paused
 - Clock in the top right corner
+- "Up next" line showing the next track in the queue
+- Smooth progress interpolation between polls (no 2s jumps)
+- Offline indicator when the bridge stops responding
+- Screen Wake Lock and iOS add-to-home-screen full-screen support
 
 ## Requirements
 
@@ -44,6 +48,7 @@ For the French version: http://localhost:8766/index.fr.html or http://localhost:
 | ALSA_CARD | 0 | ALSA card number for audio format detection |
 | MPD_HOST | 127.0.0.1 | MPD host |
 | MPD_PORT | 6600 | MPD port |
+| PORT | 8766 | HTTP port of the bridge |
 
 Copy `.env.example` to `.env` and fill in your values.
 

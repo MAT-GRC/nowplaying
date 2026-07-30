@@ -14,6 +14,10 @@ Pas besoin de nginx - le bridge sert tout sur le port 8766.
 - Défilement automatique pour les titres longs
 - Assombrissement en pause
 - Horloge en haut à droite
+- Ligne « À suivre » avec le prochain morceau de la file
+- Progression interpolée entre les polls (plus de sauts de 2 s)
+- Indicateur « hors ligne » si le pont ne répond plus
+- Wake Lock (écran maintenu allumé) et plein écran iOS via l'écran d'accueil
 
 ## Prérequis
 
@@ -42,6 +46,7 @@ Version française : http://localhost:8766/index.fr.html ou http://localhost:876
 | ALSA_CARD | 0 | Numéro de carte ALSA pour la détection du format audio |
 | MPD_HOST | 127.0.0.1 | Hôte MPD |
 | MPD_PORT | 6600 | Port MPD |
+| PORT | 8766 | Port HTTP du pont |
 
 Copiez `.env.example` en `.env` et remplissez vos valeurs.
 

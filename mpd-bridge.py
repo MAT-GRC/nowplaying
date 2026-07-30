@@ -1,35 +1,58 @@
 #!/usr/bin/env python3
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import socket, json, urllib.request, urllib.parse, re, os
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+import socket, json, urllib.request, urllib.parse, re, os, threading
 
 MPD_HOST = os.environ.get('MPD_HOST', '127.0.0.1')
 MPD_PORT = int(os.environ.get('MPD_PORT', '6600'))
+PORT = int(os.environ.get('PORT', '8766'))
 LASTFM_KEY = os.environ.get("LASTFM_API_KEY", "your_lastfm_api_key_here")
 
 _art_cache = {}
 
 _mpd_sock = None
+_mpd_lock = threading.Lock()  # the HTTP server is multi-threaded, the mpd socket is shared
 
 def mpd_command(cmd):
+    with _mpd_lock:
+        return _mpd_command_unlocked(cmd)
+
+def _mpd_connect():
+    s = socket.socket()
+    s.settimeout(3)  # bounds connect/send/recv: a frozen mpd can't hang requests
+    s.connect((MPD_HOST, MPD_PORT))
+    s.recv(1024)  # "OK MPD x.y.z" banner
+    return s
+
+def _mpd_recv(sock):
+    # Read a full mpd protocol response: it ends with a lone "OK" line,
+    # or an "ACK ..." error line. TCP may fragment, so loop until complete.
+    buf = b''
+    while True:
+        chunk = sock.recv(65536)
+        if not chunk:
+            raise ConnectionError('mpd connection closed')
+        buf += chunk
+        if buf == b'OK\n' or buf.endswith(b'\nOK\n'):
+            return buf.decode()
+        if buf.startswith(b'ACK ') and buf.endswith(b'\n'):
+            return buf.decode()
+
+def _mpd_command_unlocked(cmd):
     global _mpd_sock
     try:
         if _mpd_sock is None:
-            _mpd_sock = socket.socket()
-            _mpd_sock.connect((MPD_HOST, MPD_PORT))
-            _mpd_sock.recv(1024)
+            _mpd_sock = _mpd_connect()
         _mpd_sock.sendall((cmd + '\n').encode())
-        return _mpd_sock.recv(65536).decode()
+        return _mpd_recv(_mpd_sock)
     except:
         try:
             _mpd_sock.close()
         except:
             pass
         _mpd_sock = None
-        s = socket.socket()
-        s.connect((MPD_HOST, MPD_PORT))
-        s.recv(1024)
+        s = _mpd_connect()
         s.sendall((cmd + '\n').encode())
-        result = s.recv(65536).decode()
+        result = _mpd_recv(s)
         _mpd_sock = s
         return result
 
@@ -66,6 +89,8 @@ def get_art_url(artist, album):
     key = f"{artist}|{album}"
     if key in _art_cache:
         return _art_cache[key]
+    if len(_art_cache) > 500:
+        _art_cache.clear()  # simple cap to avoid unbounded growth
     try:
         q = urllib.parse.urlencode({
             'method': 'album.getinfo',
@@ -99,6 +124,14 @@ def get_status():
     artist = currentsong.get('artist', '')
     album = currentsong.get('album', '')
     art_url = get_art_url(artist, album) if artist and album else ''
+    # Next track in the queue (mpd exposes its position via 'nextsong')
+    next_title = ''
+    next_artist = ''
+    ns = status.get('nextsong')
+    if ns is not None and state != 'stop':
+        nxt = parse_mpd(mpd_command(f'playlistinfo {ns}'))
+        next_title = nxt.get('title', '')
+        next_artist = nxt.get('artist', '')
     return {
         'state': state,
         'title': currentsong.get('title', '\u2014'),
@@ -108,7 +141,9 @@ def get_status():
         'duration': duration,
         'format': get_alsa_format() if state != 'stop' else '',
         'art_url': art_url,
-        'file': file_url
+        'file': file_url,
+        'next_title': next_title,
+        'next_artist': next_artist
     }
 
 STATIC_FILES = {
@@ -153,4 +188,4 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
     def log_message(self, *args): pass
 
-HTTPServer(('0.0.0.0', 8766), Handler).serve_forever()
+ThreadingHTTPServer(('0.0.0.0', PORT), Handler).serve_forever()
