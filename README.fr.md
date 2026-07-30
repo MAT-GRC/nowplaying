@@ -17,7 +17,8 @@ Pas besoin de nginx - le bridge sert tout sur le port 8766.
 - Ligne « À suivre » avec le prochain morceau de la file
 - Progression interpolée entre les polls (plus de sauts de 2 s)
 - Indicateur « hors ligne » si le pont ne répond plus
-- Wake Lock (écran maintenu allumé) et plein écran iOS via l'écran d'accueil
+- Mise en page portrait adaptée aux téléphones (iOS et Android) : pochette centrée en haut, horloge masquée
+- Wake Lock (écran maintenu allumé) et plein écran via l'écran d'accueil, sur iOS comme sur Android
 
 ## Prérequis
 

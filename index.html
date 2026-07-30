@@ -277,32 +277,38 @@
 
     #nothing span { display: block; font-size: 14px; margin-top: 8px; opacity: 0.5; }
 
-    @media (max-width: 768px) {
+    /* ===== Portrait (phone): artwork centered on top, info below ===== */
+    @media (max-width: 700px) {
       #content {
         flex-direction: column;
         align-items: center;
-        gap: 24px;
-        padding: 24px;
+        gap: 28px;
+        padding: 28px;
       }
-      #artwork, #artwork-prev, #artwork-fallback {
-        width: 220px !important;
-        height: 220px !important;
+
+      #artwork,
+      #artwork-prev,
+      #artwork-fallback {
+        width: clamp(180px, 62vw, 320px);
+        height: clamp(180px, 62vw, 320px);
       }
-      #title { font-size: 28px; }
-      #artist { font-size: 20px; }
-      #album { font-size: 15px; }
-      #clock { font-size: 16px; top: 16px; right: 20px; }
-      #info { width: 100%; }
-    }
-    @media (max-width: 480px) {
-      #artwork, #artwork-prev, #artwork-fallback {
-        width: 160px !important;
-        height: 160px !important;
+
+      #info {
+        flex: none;
+        width: 100%;
+        text-align: center;
       }
-      #title { font-size: 22px; }
-      #artist { font-size: 17px; }
-      #album { font-size: 13px; }
-      #content { padding: 16px; gap: 16px; }
+
+      #title { font-size: clamp(24px, 7vw, 34px); margin-bottom: 8px; }
+      #artist { font-size: clamp(16px, 4.5vw, 21px); margin-bottom: 6px; }
+      #album { font-size: clamp(13px, 3.5vw, 16px); margin-bottom: 14px; }
+
+      #audio-info { justify-content: center; margin-bottom: 24px; }
+      #status { justify-content: center; margin-top: 20px; }
+      #next-track { text-align: center; }
+
+      #clock { display: none; }
+      #offline-badge { top: 18px; left: 20px; font-size: 11px; padding: 5px 12px; }
     }
   </style>
 </head>
@@ -610,6 +616,11 @@
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') requestWakeLock();
   });
+
+  // Silent periodic reload: this page is meant to stay open as a kiosk
+  // display with no manual navigation, so without this a server-side
+  // update would never be picked up by an already-open tab.
+  setTimeout(() => location.reload(), 6 * 60 * 60 * 1000);
 
   // Lang redirect
   const params = new URLSearchParams(window.location.search);

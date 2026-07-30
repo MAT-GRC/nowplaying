@@ -19,7 +19,8 @@ No nginx required - the bridge serves everything on port 8766.
 - "Up next" line showing the next track in the queue
 - Smooth progress interpolation between polls (no 2s jumps)
 - Offline indicator when the bridge stops responding
-- Screen Wake Lock and iOS add-to-home-screen full-screen support
+- Responsive portrait layout for phones (iOS and Android): artwork centered on top, clock hidden
+- Screen Wake Lock and full-screen support via add-to-home-screen, on both iOS and Android
 
 ## Requirements
 
