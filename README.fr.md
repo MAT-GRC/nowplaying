@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" width="96" alt="logo nowplaying">
+</p>
+
 # nowplaying
 
 Page plein écran "En lecture" pour MPD. Affiche le titre en cours avec un dégradé de fond extrait de la pochette, des badges de qualité audio et la détection Hi-Res.

@@ -257,6 +257,7 @@ STATIC_FILES = {
     '/index.html': ('index.html', 'text/html; charset=utf-8'),
     '/index.fr.html': ('index.fr.html', 'text/html; charset=utf-8'),
     '/hires.svg': ('hires.svg', 'image/svg+xml'),
+    '/apple-touch-icon.png': ('assets/apple-touch-icon.png', 'image/png'),
 }
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))

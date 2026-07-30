@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" width="96" alt="nowplaying logo">
+</p>
+
 # nowplaying
 
 ![Preview](screenshot.png)
