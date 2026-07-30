@@ -9,7 +9,7 @@ No nginx required - the bridge serves everything on port 8766.
 ## What it looks like
 
 - Background gradient extracted from the album art colors
-- Album art via Last.fm
+- Album art straight from mpd (embedded tags or cover file in the folder), Last.fm as an optional fallback for streams and radios
 - FLAC / bit depth / sample rate badges
 - Hi-Res Audio logo for anything >= 88.2 kHz or >= 24 bit
 - Progress bar, elapsed and total time
@@ -25,14 +25,14 @@ No nginx required - the bridge serves everything on port 8766.
 
 - MPD
 - Python 3
-- A Last.fm API key - free at https://www.last.fm/api
+- Optional: a Last.fm API key for artwork on streams and radios - free at https://www.last.fm/api
 
 ## Getting started
 ```bash
 git clone https://github.com/MAT-GRC/nowplaying.git
 cd nowplaying
 pip install python-mpd2 requests
-export LASTFM_API_KEY=your_key_here
+export LASTFM_API_KEY=your_key_here   # optional, artwork fallback for streams
 python mpd-bridge.py
 ```
 
@@ -44,7 +44,7 @@ For the French version: http://localhost:8766/index.fr.html or http://localhost:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| LASTFM_API_KEY | required | Your Last.fm API key |
+| LASTFM_API_KEY | optional | Artwork fallback for streams and radios |
 | ALSA_CARD | 0 | ALSA card number for audio format detection |
 | MPD_HOST | 127.0.0.1 | MPD host |
 | MPD_PORT | 6600 | MPD port |
@@ -54,7 +54,7 @@ Copy `.env.example` to `.env` and fill in your values.
 
 ## Docker
 
-A `docker-compose.yml` is included. Set `LASTFM_API_KEY` in the environment section and run:
+A `docker-compose.yml` is included. Optionally set `LASTFM_API_KEY` in the environment section and run:
 docker compose up -d
 
 ## License

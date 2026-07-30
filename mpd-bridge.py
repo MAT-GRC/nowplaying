@@ -56,6 +56,92 @@ def _mpd_command_unlocked(cmd):
         _mpd_sock = s
         return result
 
+_mpd_art_cache = {}  # file uri -> (bytes|None, mime)
+
+def _fetch_mpd_binary(cmd, uri):
+    # Fetch a binary object (album art) over its own mpd connection:
+    # keeping binary chunks off the shared text socket avoids any desync.
+    s = _mpd_connect()
+    try:
+        buf = bytearray()
+
+        def read_line():
+            while True:
+                i = buf.find(b'\n')
+                if i >= 0:
+                    line = bytes(buf[:i]).decode('utf-8', 'replace')
+                    del buf[:i + 1]
+                    return line
+                chunk = s.recv(65536)
+                if not chunk:
+                    raise ConnectionError('mpd connection closed')
+                buf.extend(chunk)
+
+        def read_exact(n):
+            while len(buf) < n:
+                chunk = s.recv(65536)
+                if not chunk:
+                    raise ConnectionError('mpd connection closed')
+                buf.extend(chunk)
+            data = bytes(buf[:n])
+            del buf[:n]
+            return data
+
+        quoted = uri.replace('\\', '\\\\').replace('"', '\\"')
+        data = bytearray()
+        mime = ''
+        total = None
+        while total is None or len(data) < total:
+            s.sendall(f'{cmd} "{quoted}" {len(data)}\n'.encode())
+            size = None
+            chunk_len = None
+            while True:
+                line = read_line()
+                if line.startswith('ACK '):
+                    return None, ''
+                if line == 'OK':
+                    break
+                if line.startswith('size: '):
+                    size = int(line[6:])
+                elif line.startswith('type: '):
+                    mime = line[6:]
+                elif line.startswith('binary: '):
+                    chunk_len = int(line[8:])
+                    data += read_exact(chunk_len)
+            if size is None or not chunk_len:
+                break  # no picture, or empty chunk
+            total = size
+        return (bytes(data), mime) if data else (None, '')
+    finally:
+        s.close()
+
+def _sniff_mime(data):
+    if data[:8] == b'\x89PNG\r\n\x1a\n':
+        return 'image/png'
+    if data[:3] == b'\xff\xd8\xff':
+        return 'image/jpeg'
+    if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+        return 'image/webp'
+    return 'image/jpeg'
+
+def get_mpd_art(uri):
+    # readpicture: embedded tag art; albumart: cover file next to the track
+    if uri in _mpd_art_cache:
+        return _mpd_art_cache[uri]
+    result = (None, '')
+    for cmd in ('readpicture', 'albumart'):
+        try:
+            data, mime = _fetch_mpd_binary(cmd, uri)
+            if data:
+                result = (data, mime or _sniff_mime(data))
+                break
+        except:
+            pass
+    if len(_mpd_art_cache) > 20:
+        _mpd_art_cache.clear()  # art blobs can be large, keep this cache small
+    _mpd_art_cache[uri] = result
+    return result
+
 def parse_mpd(raw):
     d = {}
     for line in raw.splitlines():
@@ -114,6 +200,17 @@ def get_art_url(artist, album):
     _art_cache[key] = ''
     return ''
 
+def get_audio_format(status):
+    # ALSA gives the true hardware output format when available; otherwise
+    # fall back to mpd's own decoded format ("44100:16:2" in status).
+    fmt = get_alsa_format()
+    if fmt:
+        return fmt
+    audio = status.get('audio', '')
+    if re.fullmatch(r'\d+:\d+:\d+', audio):
+        return audio
+    return ''
+
 def get_status():
     status = parse_mpd(mpd_command('status'))
     currentsong = parse_mpd(mpd_command('currentsong'))
@@ -123,7 +220,15 @@ def get_status():
     file_url = currentsong.get('file', '')
     artist = currentsong.get('artist', '')
     album = currentsong.get('album', '')
-    art_url = get_art_url(artist, album) if artist and album else ''
+    # Artwork: prefer mpd itself (embedded tags or cover file, no API key
+    # needed), fall back to Last.fm for streams or when mpd has nothing.
+    art_url = ''
+    if file_url and not file_url.startswith('http'):
+        data, _ = get_mpd_art(file_url)
+        if data:
+            art_url = '/art?file=' + urllib.parse.quote(file_url, safe='')
+    if not art_url and artist and album and LASTFM_KEY != 'your_lastfm_api_key_here':
+        art_url = get_art_url(artist, album)
     # Next track in the queue (mpd exposes its position via 'nextsong')
     next_title = ''
     next_artist = ''
@@ -139,7 +244,7 @@ def get_status():
         'album': album,
         'elapsed': elapsed,
         'duration': duration,
-        'format': get_alsa_format() if state != 'stop' else '',
+        'format': get_audio_format(status) if state != 'stop' else '',
         'art_url': art_url,
         'file': file_url,
         'next_title': next_title,
@@ -170,6 +275,20 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(500)
                 self.end_headers()
                 self.wfile.write(str(e).encode())
+        elif self.path.startswith('/art?'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            uri = qs.get('file', [''])[0]
+            data, mime = get_mpd_art(uri) if uri else (None, '')
+            if data:
+                self.send_response(200)
+                self.send_header('Content-Type', mime or 'image/jpeg')
+                self.send_header('Cache-Control', 'max-age=3600')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self.send_response(404)
+                self.end_headers()
         elif self.path in STATIC_FILES:
             filename, content_type = STATIC_FILES[self.path]
             filepath = os.path.join(SCRIPT_DIR, filename)
